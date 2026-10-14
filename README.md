@@ -1,6 +1,6 @@
 # US West Tracks
 
-Every ride and hike recorded in Gaia GPS, each on its own watercolor 3D terrain map with an elevation profile and a "Play Ride" fly-through.
+Every ride and hike recorded in Gaia GPS, each in 3D on satellite imagery, with an elevation profile and a "Play Ride" fly-through.
 
 Modeled on [Beckwourth Peak](https://beckwourth.bkxc.chatgpt.site/) and the open-source [tahoe-trails](https://github.com/kneath/tahoe-trails).
 
@@ -41,6 +41,6 @@ npm run dev
 ## How it works
 
 - `scripts/build-data.mjs` parses each GPX track, computes distance, climbing (with a noise threshold) and moving time, and downloads [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) around it into a ~320×320 Int16 heightmap.
-- `src/terrain.ts` turns the heightmap into a diorama block with Three.js and a watercolor shader: elevation palette, slope pigment, violet shadows, pigment pooling and faint contours.
+- `src/terrain.ts` turns the heightmap into a diorama block with Three.js; `src/satellite.ts` stitches Esri World Imagery tiles into a texture draped over it.
 - `src/track.ts` drapes the track on the terrain, links the marker to the elevation profile, and runs the chase-camera fly-through.
 - Place names come from OpenStreetMap Nominatim when the build has network access.

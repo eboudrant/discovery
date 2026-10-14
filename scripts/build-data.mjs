@@ -7,7 +7,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { DOMParser } from '@xmldom/xmldom';
 import { PNG } from 'pngjs';
-import { buildWaterMask } from './water.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const TRACKS_DIR = path.join(ROOT, 'tracks');
@@ -16,7 +15,7 @@ const CACHE_DIR = path.join(ROOT, '.cache', 'terrarium');
 const TILE_URL = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
 
 const EARTH_R = 6378137;
-const GRID = 320; // samples along the longer side of the terrain
+const GRID = 512; // samples along the longer side of the terrain
 const MAX_TILES = 48;
 const MAX_TRACK_POINTS = 2500;
 
@@ -438,20 +437,7 @@ async function main() {
         zoom: terrain.zoom,
         file: `${slug}.terrain.bin`,
         mercator: bbox,
-        water: null,
       };
-      const water = await buildWaterMask(
-        bbox,
-        terrain.nx * 3,
-        terrain.ny * 3,
-        k,
-        path.join(OUT_DIR, `${slug}.water.png`),
-        path.join(ROOT, '.cache', 'water'),
-      );
-      if (water) {
-        terrainMeta.water = `${slug}.water.png`;
-        console.log(`  water: ${water.lakes} lakes, ${water.rivers} rivers/streams`);
-      }
       await fs.writeFile(path.join(OUT_DIR, `${slug}.terrain.bin`), Buffer.from(terrain.heights.buffer));
       await fs.writeFile(path.join(OUT_DIR, `${slug}.json`), JSON.stringify({ ...record, terrain: terrainMeta, waypoints, track: pts }));
       index.push(record);

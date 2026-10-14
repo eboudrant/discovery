@@ -30,7 +30,6 @@ export interface TrackData extends TrackSummary {
     zoom: number;
     file: string;
     mercator: { minX: number; maxX: number; minY: number; maxY: number };
-    water: string | null;
   };
   waypoints: { x: number; y: number; name: string; sym: string }[];
   /** [east m, north m, elevation m, cumulative distance m, seconds since start | null] */

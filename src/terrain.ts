@@ -43,22 +43,6 @@ export class Heightmap {
   }
 }
 
-const noiseGlsl = /* glsl */ `
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
-  float vnoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
-  }
-  float fbm(vec2 p) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 5; i++) { v += a * vnoise(p); p *= 2.03; a *= 0.5; }
-    return v;
-  }
-`;
-
 const terrainVertex = /* glsl */ `
   varying vec3 vWorld;
   varying vec3 vNormal;
@@ -72,76 +56,13 @@ const terrainVertex = /* glsl */ `
   }
 `;
 
-const terrainFragment = /* glsl */ `
-  uniform float uMinY;
-  uniform float uMaxY;
-  uniform float uScale;
-  uniform float uContour;
+// Plain shaded relief, shown while imagery loads or if it cannot be loaded.
+const reliefFragment = /* glsl */ `
   uniform vec3 uSun;
-  uniform sampler2D uWater;
-  uniform float uHasWater;
-  varying vec3 vWorld;
   varying vec3 vNormal;
-  varying vec2 vUv;
-  ${noiseGlsl}
-
-  vec3 palette(float t) {
-    vec3 c0 = vec3(0.56, 0.66, 0.50); // valley sage
-    vec3 c1 = vec3(0.66, 0.71, 0.49); // meadow
-    vec3 c2 = vec3(0.80, 0.74, 0.52); // dry ochre
-    vec3 c3 = vec3(0.79, 0.62, 0.50); // sienna ridges
-    vec3 c4 = vec3(0.84, 0.81, 0.86); // lavender granite
-    if (t < 0.25) return mix(c0, c1, t / 0.25);
-    if (t < 0.5) return mix(c1, c2, (t - 0.25) / 0.25);
-    if (t < 0.78) return mix(c2, c3, (t - 0.5) / 0.28);
-    return mix(c3, c4, (t - 0.78) / 0.22);
-  }
-
   void main() {
-    vec3 n = normalize(vNormal);
-    vec2 p = vWorld.xz / uScale;
-    // Pigment pools: low-frequency blotches shift the hue band and the value.
-    float blot = fbm(p * 3.0);
-    float grain = fbm(p * 40.0);
-    float t = clamp((vWorld.y - uMinY) / max(uMaxY - uMinY, 1.0) + (blot - 0.5) * 0.18, 0.0, 1.0);
-    vec3 col = palette(t);
-
-    // Steep slopes pick up darker umber pigment.
-    float slope = 1.0 - n.y;
-    col = mix(col, vec3(0.55, 0.45, 0.38), smoothstep(0.25, 0.75, slope) * 0.45);
-
-    // Soft light with cool violet shadows and warm highlights.
-    float diff = dot(n, normalize(uSun));
-    float light = smoothstep(-0.2, 0.9, diff);
-    vec3 shadow = vec3(0.48, 0.45, 0.64);
-    col = mix(col * shadow * 1.25, col * vec3(1.06, 1.02, 0.94), light);
-
-    // Watercolor value variation and granulation.
-    col *= 0.92 + blot * 0.14;
-    col *= 0.96 + grain * 0.07;
-
-    // Wet edge: pigment collects along noise isolines.
-    float iso = abs(fract(blot * 6.0) - 0.5);
-    col *= 1.0 - smoothstep(0.05, 0.0, iso) * 0.04;
-
-    // Faint contour lines.
-    float c = vWorld.y / uContour;
-    float cw = fwidth(c);
-    float line = 1.0 - smoothstep(0.0, cw * 1.2, abs(fract(c) - 0.5) - 0.5 + cw);
-    col = mix(col, col * 0.82, line * 0.25);
-
-    // Lakes and rivers: a cool wash, darker where pigment pools at the shore.
-    if (uHasWater > 0.5) {
-      float wet = texture2D(uWater, vUv).r;
-      float edge = smoothstep(0.15, 0.5, wet) * (1.0 - smoothstep(0.6, 0.95, wet));
-      vec3 water = mix(vec3(0.47, 0.62, 0.74), vec3(0.58, 0.72, 0.80), blot) * (0.95 + grain * 0.08);
-      col = mix(col, water, smoothstep(0.2, 0.6, wet));
-      col = mix(col, vec3(0.33, 0.47, 0.60), edge * 0.35);
-    }
-
-    // Lift toward paper so the palette reads as wash, not paint.
-    col = mix(col, vec3(0.965, 0.937, 0.878), 0.12);
-    gl_FragColor = vec4(col, 1.0);
+    float shade = 0.55 + 0.45 * max(dot(normalize(vNormal), normalize(uSun)), 0.0);
+    gl_FragColor = vec4(vec3(0.74, 0.72, 0.68) * shade, 1.0);
   }
 `;
 
@@ -163,23 +84,17 @@ const satelliteFragment = /* glsl */ `
 const skirtFragment = /* glsl */ `
   uniform float uBase;
   uniform float uTop;
-  uniform float uScale;
   varying vec3 vWorld;
   varying vec3 vNormal;
-  ${noiseGlsl}
   void main() {
     float t = clamp((vWorld.y - uBase) / max(uTop - uBase, 1.0), 0.0, 1.0);
-    float bands = fbm(vec2((vWorld.x + vWorld.z) / uScale * 4.0, vWorld.y / uScale * 30.0));
-    vec3 deep = vec3(0.62, 0.52, 0.44);
-    vec3 top = vec3(0.78, 0.68, 0.55);
-    vec3 col = mix(deep, top, t) * (0.9 + bands * 0.18);
-    float side = abs(normalize(vNormal).x) * 0.08;
-    col *= 0.95 - side;
+    vec3 col = mix(vec3(0.42, 0.36, 0.30), vec3(0.60, 0.53, 0.45), t);
+    col *= 0.95 - abs(normalize(vNormal).x) * 0.08;
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-export function buildTerrain(hm: Heightmap, water: THREE.Texture | null) {
+export function buildTerrain(hm: Heightmap) {
   const group = new THREE.Group();
   const geo = new THREE.PlaneGeometry(hm.width, hm.height, hm.nx - 1, hm.ny - 1);
   geo.rotateX(-Math.PI / 2); // plane +y (north) becomes -z
@@ -192,17 +107,8 @@ export function buildTerrain(hm: Heightmap, water: THREE.Texture | null) {
   const sun = new THREE.Vector3(-0.55, 0.75, -0.35);
   const terrainMat = new THREE.ShaderMaterial({
     vertexShader: terrainVertex,
-    fragmentShader: terrainFragment,
-    uniforms: {
-      uMinY: { value: 0 },
-      uMaxY: { value: relief },
-      uScale: { value: scale / 4 },
-      uContour: { value: (hm.max - hm.min > 600 ? 100 : 40) * EXAGGERATION },
-      uSun: { value: sun },
-      uWater: { value: water },
-      uHasWater: { value: water ? 1 : 0 },
-    },
-    extensions: { derivatives: true } as never,
+    fragmentShader: reliefFragment,
+    uniforms: { uSun: { value: sun } },
   });
   const mesh = new THREE.Mesh(geo, terrainMat);
   group.add(mesh);
@@ -232,7 +138,7 @@ export function buildTerrain(hm: Heightmap, water: THREE.Texture | null) {
   const skirtMat = new THREE.ShaderMaterial({
     vertexShader: terrainVertex,
     fragmentShader: skirtFragment,
-    uniforms: { uBase: { value: base }, uTop: { value: relief }, uScale: { value: scale } },
+    uniforms: { uBase: { value: base }, uTop: { value: relief } },
     side: THREE.DoubleSide,
   });
   group.add(new THREE.Mesh(skirtGeo, skirtMat));
@@ -265,5 +171,5 @@ export function buildTerrain(hm: Heightmap, water: THREE.Texture | null) {
       uniforms: { uMap: { value: map }, uSun: { value: sun } },
     });
 
-  return { group, base, relief, mesh, painted: terrainMat, satellite };
+  return { group, base, relief, mesh, satellite };
 }
