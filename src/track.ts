@@ -223,10 +223,12 @@ async function main() {
     controls.target.copy(v.target);
     camera.position.copy(v.position);
   };
-  document.getElementById('recenter')!.addEventListener('click', () => {
-    if (playing) stopPlay();
-    resetView(true);
-  });
+  // Recenter: while playing, go back to following the marker; otherwise frame the track.
+  const recenter = () => {
+    if (playing) follow = true;
+    else resetView(true);
+  };
+  document.getElementById('recenter')!.addEventListener('click', () => recenter());
 
   const resize = () => {
     const w = stage.clientWidth;
@@ -289,6 +291,7 @@ async function main() {
   // Play Ride: chase camera that follows the marker along the track.
   const playBtn = document.getElementById('play') as HTMLButtonElement;
   let playing = false;
+  let follow = true;
   let progress = 0;
   let last = 0;
   const duration = THREE.MathUtils.clamp(miles(total) * 2.2, 20, 60) * 1000;
@@ -339,33 +342,34 @@ async function main() {
     nextStop = stops.findIndex((st) => st.m > here + 1);
     if (nextStop < 0) nextStop = stops.length;
     playing = true;
+    follow = true;
     last = performance.now();
-    controls.enabled = false;
     playBtn.textContent = '❚❚ Pause';
     look.copy(pointAt(pts, dist, distAt(progress)));
   };
   const stopPlay = () => {
     playing = false;
     endHold();
-    controls.enabled = true;
-    controls.target.copy(look);
+    if (follow) controls.target.copy(look);
     playBtn.textContent = progress >= 1 ? '↺ Replay' : '▶ Play Ride';
   };
   playBtn.addEventListener('click', () => (playing ? stopPlay() : startPlay()));
-  renderer.domElement.addEventListener('pointerdown', () => {
+  // Panning or zooming during playback detaches the camera; the ride keeps going.
+  const takeOver = () => {
     flight = null;
-    if (playing) stopPlay();
-  });
-  renderer.domElement.addEventListener('wheel', () => (flight = null), { passive: true });
+    if (playing && follow) {
+      follow = false;
+      controls.target.copy(look);
+    }
+  };
+  renderer.domElement.addEventListener('pointerdown', takeOver);
+  renderer.domElement.addEventListener('wheel', takeOver, { passive: true });
   addEventListener('keydown', (e) => {
     if (e.key === ' ' && e.target === document.body) {
       e.preventDefault();
       playBtn.click();
     }
-    if (e.key === 'Escape') {
-      if (playing) stopPlay();
-      resetView(true);
-    }
+    if (e.key === 'Escape') recenter();
   });
 
   const tick = (now: number) => {
@@ -390,20 +394,24 @@ async function main() {
         }
         showAt(m);
       }
-      // Look a little ahead of the rider, camera trails behind and above.
-      pointAt(pts, dist, Math.min(total, m + total * 0.04), ahead);
-      const heading = ahead.clone().sub(rider.position).setY(0);
-      if (heading.lengthSq() < 1e-6) heading.set(0, 0, -1);
-      heading.normalize();
-      desired
-        .copy(rider.position)
-        .addScaledVector(heading, -size * 0.3)
-        .add(new THREE.Vector3(-heading.z, 0, heading.x).multiplyScalar(size * 0.08));
-      desired.y = Math.max(rider.position.y, hm.y(hm.at(desired.x, -desired.z))) + size * 0.2;
-      const k = 1 - Math.exp(-dt / 600);
-      camera.position.lerp(desired, k);
-      look.lerp(rider.position, Math.min(1, k * 2));
-      camera.lookAt(look);
+      if (follow) {
+        // Look a little ahead of the rider, camera trails behind and above.
+        pointAt(pts, dist, Math.min(total, m + total * 0.04), ahead);
+        const heading = ahead.clone().sub(rider.position).setY(0);
+        if (heading.lengthSq() < 1e-6) heading.set(0, 0, -1);
+        heading.normalize();
+        desired
+          .copy(rider.position)
+          .addScaledVector(heading, -size * 0.3)
+          .add(new THREE.Vector3(-heading.z, 0, heading.x).multiplyScalar(size * 0.08));
+        desired.y = Math.max(rider.position.y, hm.y(hm.at(desired.x, -desired.z))) + size * 0.2;
+        const k = 1 - Math.exp(-dt / 600);
+        camera.position.lerp(desired, k);
+        look.lerp(rider.position, Math.min(1, k * 2));
+        camera.lookAt(look);
+      } else {
+        controls.update();
+      }
       if (progress >= 1) stopPlay();
     } else {
       if (flight) {
