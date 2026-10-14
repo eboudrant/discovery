@@ -240,7 +240,7 @@ async function buildTerrain(bbox) {
     const count = (Math.floor(x1) - Math.floor(x0) + 1) * (Math.floor(y1) - Math.floor(y0) + 1);
     // Stop once a tile pixel is about as coarse as a grid cell, or we would download too much.
     const pxPerGrid = ((x1 - x0) * 256) / GRID;
-    if (count <= MAX_TILES && pxPerGrid <= 1.6) break;
+    if (count <= MAX_TILES && pxPerGrid <= 2.5) break;
     if (count <= MAX_TILES / 4) break;
   }
   const w = bbox.maxX - bbox.minX;
