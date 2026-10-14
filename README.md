@@ -10,6 +10,8 @@ Modeled on [Beckwourth Peak](https://beckwourth.bkxc.chatgpt.site/) and the open
 2. Run `npm run import -- ~/Downloads/export.gpx`. It writes one GPX per ride or hike into `tracks/`.
    A recording left running for a whole trip is split at long pauses, and stretches driven at highway
    speed are dropped, so the drives (and your home) never end up in this public repo.
+   For a multi-day trip shown as one track, keep everything between two places instead:
+   `npm run import -- export.gpx --from 39.5596,-120.8266 --to 39.3280,-120.1833 --name "Downieville to Truckee"`
 3. Optionally give a track a nicer title, location, summary or link in `tracks/meta.json`, keyed by the track's slug (shown in the build log):
 
    ```json

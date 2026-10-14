@@ -1,5 +1,5 @@
 import './style.css';
-import { escapeHtml, fmtDate, fmtDuration, fmtFeet, fmtMiles, type TrackSummary } from './format';
+import { escapeHtml, fmtDateRange, fmtDuration, fmtFeet, fmtMiles, type TrackSummary } from './format';
 
 async function main() {
   const grid = document.getElementById('grid')!;
@@ -22,7 +22,7 @@ async function main() {
       <a class="card" href="track.html?t=${encodeURIComponent(t.slug)}">
         <svg viewBox="-8 -8 116 116" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><path d="${t.preview}"/></svg>
         <h2>${escapeHtml(t.name)}</h2>
-        <p class="when">${[fmtDate(t.date), t.location].filter(Boolean).map((s) => escapeHtml(s!)).join(' · ')}</p>
+        <p class="when">${[fmtDateRange(t.date, t.endDate), t.location].filter(Boolean).map((s) => escapeHtml(s!)).join(' · ')}</p>
         <div class="nums">
           <span><b>${fmtMiles(t.stats.distance)}</b> mi</span>
           <span><b>${fmtFeet(t.stats.gain)}</b> ft</span>

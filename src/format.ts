@@ -6,6 +6,7 @@ export interface TrackSummary {
   location: string | null;
   link: string | null;
   date: string | null;
+  endDate: string | null;
   start: string | null;
   center: { lat: number; lon: number };
   stats: {
@@ -50,6 +51,17 @@ export function fmtDate(iso: string | null) {
   if (!iso) return '';
   const d = new Date(`${iso}T12:00:00`);
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+/** "October 7 – 11, 2026" for multi-day tracks. */
+export function fmtDateRange(start: string | null, end: string | null) {
+  if (!start || !end || end === start) return fmtDate(start);
+  const a = new Date(`${start}T12:00:00`);
+  const b = new Date(`${end}T12:00:00`);
+  const sameMonth = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+  const left = a.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  const right = b.toLocaleDateString('en-US', sameMonth ? { day: 'numeric', year: 'numeric' } : { month: 'long', day: 'numeric', year: 'numeric' });
+  return `${left} – ${right}`;
 }
 
 export function escapeHtml(s: string) {

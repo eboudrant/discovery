@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { escapeHtml, feet, fmtDate, fmtDuration, fmtFeet, fmtMiles, miles, type TrackData } from './format';
+import { escapeHtml, feet, fmtDateRange, fmtDuration, fmtFeet, fmtMiles, miles, type TrackData } from './format';
 import { Heightmap, buildTerrain } from './terrain';
 import { Profile } from './profile';
 
@@ -27,7 +27,7 @@ function renderInfo(d: TrackData) {
   document.getElementById('title')!.innerHTML = last
     ? `${escapeHtml(words.join(' '))} <em>${escapeHtml(last)}</em>`
     : escapeHtml(d.name);
-  document.getElementById('meta')!.textContent = [fmtDate(d.date), d.location].filter(Boolean).join(' · ');
+  document.getElementById('meta')!.textContent = [fmtDateRange(d.date, d.endDate), d.location].filter(Boolean).join(' · ');
   document.getElementById('summary')!.textContent = d.summary ?? '';
   const s = d.stats;
   document.getElementById('stats')!.innerHTML = `

@@ -346,7 +346,7 @@ async function main() {
   const used = new Set();
   for (const file of files) {
     const xml = await fs.readFile(path.join(TRACKS_DIR, file), 'utf8');
-    for (const trk of parseGpx(xml, path.basename(file, path.extname(file))).flatMap(splitActivities)) {
+    for (const trk of parseGpx(xml, path.basename(file, path.extname(file)))) {
       const stats = computeStats(trk.points);
       const day = stats.start ? localDate(stats.start) : null;
       let slug = slugify(trk.name);
@@ -411,6 +411,7 @@ async function main() {
         location: m.location || (await placeName(center.lat, center.lon)),
         link: m.link || null,
         date: day,
+        endDate: stats.start && stats.elapsed ? localDate(stats.start + stats.elapsed * 1000) : null,
         start: stats.start ? new Date(stats.start).toISOString() : null,
         center,
         stats: {
