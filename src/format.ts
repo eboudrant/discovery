@@ -60,7 +60,7 @@ export function fmtDateRange(start: string | null, end: string | null) {
   const b = new Date(`${end}T12:00:00`);
   const sameMonth = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
   const left = a.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-  const right = b.toLocaleDateString('en-US', sameMonth ? { day: 'numeric', year: 'numeric' } : { month: 'long', day: 'numeric', year: 'numeric' });
+  const right = sameMonth ? `${b.getDate()}, ${b.getFullYear()}` : b.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   return `${left} – ${right}`;
 }
 
