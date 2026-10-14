@@ -142,6 +142,11 @@ async function main() {
   const start = dot('#3f6b4a', 26);
   start.position.copy(pts[0]);
   scene.add(start);
+  for (const w of data.waypoints ?? []) {
+    const marker = dot(/camp/i.test(w.sym) ? '#5b6f8f' : '#2f2a24', 16);
+    marker.position.set(w.x, hm.y(hm.at(w.x, w.y)) + size / 400, -w.y);
+    scene.add(marker);
+  }
   const rider = dot('#b5452f', 34);
   rider.renderOrder = 6;
   rider.visible = false;

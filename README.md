@@ -7,7 +7,9 @@ Modeled on [Beckwourth Peak](https://beckwourth.bkxc.chatgpt.site/) and the open
 ## Adding tracks
 
 1. In Gaia GPS on the web, open **Saved**, select the tracks (or a folder) and click **Export → GPX**.
-2. Drop the `.gpx` file(s) into `tracks/`. A file can hold one track or many.
+2. Run `npm run import -- ~/Downloads/export.gpx`. It writes one GPX per ride or hike into `tracks/`.
+   A recording left running for a whole trip is split at long pauses, and stretches driven at highway
+   speed are dropped, so the drives (and your home) never end up in this public repo.
 3. Optionally give a track a nicer title, location, summary or link in `tracks/meta.json`, keyed by the track's slug (shown in the build log):
 
    ```json

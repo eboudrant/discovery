@@ -6,7 +6,8 @@
     "data": "node scripts/build-data.mjs",
     "dev": "vite",
     "build": "npm run data && tsc -p . && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "import": "node scripts/import.mjs"
   },
   "author": "",
   "license": "MIT",

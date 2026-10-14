@@ -22,6 +22,7 @@ export interface TrackSummary {
 
 export interface TrackData extends TrackSummary {
   terrain: { nx: number; ny: number; width: number; height: number; zoom: number; file: string };
+  waypoints: { x: number; y: number; name: string; sym: string }[];
   /** [east m, north m, elevation m, cumulative distance m, seconds since start | null] */
   track: [number, number, number, number, number | null][];
 }

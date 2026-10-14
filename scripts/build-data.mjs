@@ -30,7 +30,7 @@ function haversine(a, b) {
   return 2 * 6371008.8 * Math.asin(Math.sqrt(h));
 }
 
-function slugify(s) {
+export function slugify(s) {
   return s
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
@@ -42,7 +42,7 @@ function slugify(s) {
 
 const text = (el, tag) => el.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
 
-function parseGpx(xml, fallbackName) {
+export function parseGpx(xml, fallbackName) {
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
   const tracks = [];
   const trks = Array.from(doc.getElementsByTagName('trk'));
@@ -54,7 +54,7 @@ function parseGpx(xml, fallbackName) {
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       const ele = parseFloat(text(pt, 'ele'));
       const time = text(pt, 'time');
-      points.push({ lat, lon, ele: Number.isFinite(ele) ? ele : null, time: time ? Date.parse(time) : null });
+      points.push({ lat, lon, ele: validEle(ele), time: time ? Date.parse(time) : null });
     }
     if (points.length < 2) continue;
     tracks.push({ name: text(trk, 'name') || fallbackName, desc: text(trk, 'desc'), points });
@@ -65,13 +65,79 @@ function parseGpx(xml, fallbackName) {
       const points = Array.from(rte.getElementsByTagName('rtept')).map((pt) => ({
         lat: parseFloat(pt.getAttribute('lat')),
         lon: parseFloat(pt.getAttribute('lon')),
-        ele: Number.isFinite(parseFloat(text(pt, 'ele'))) ? parseFloat(text(pt, 'ele')) : null,
+        ele: validEle(parseFloat(text(pt, 'ele'))),
         time: null,
       }));
       if (points.length >= 2) tracks.push({ name: text(rte, 'name') || fallbackName, desc: text(rte, 'desc'), points });
     }
   }
-  return tracks;
+  const waypoints = Array.from(doc.getElementsByTagName('wpt'))
+    .map((pt) => ({
+      lat: parseFloat(pt.getAttribute('lat')),
+      lon: parseFloat(pt.getAttribute('lon')),
+      name: text(pt, 'name'),
+      sym: text(pt, 'sym'),
+    }))
+    .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lon));
+  return tracks.map((t) => ({ ...t, waypoints }));
+}
+
+// GPS units sometimes write sentinel values such as -19999 when they have no fix.
+const validEle = (e) => (Number.isFinite(e) && e > -450 && e < 9000 ? e : null);
+
+const TIME_ZONE = 'America/Los_Angeles';
+export const localDate = (t) => new Date(t).toLocaleDateString('en-CA', { timeZone: TIME_ZONE });
+
+// Gaia names recordings "Wednesday Morning Activity" after the day recording started;
+// once a recording is split, rename each piece after its own start time.
+function autoName(name, start) {
+  if (!/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) (Morning|Afternoon|Evening|Night) /.test(name) || !start) return name;
+  const d = new Date(start);
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: TIME_ZONE });
+  const hour = Number(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: TIME_ZONE }));
+  const part = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : hour < 21 ? 'Evening' : 'Night';
+  return name.replace(/^\w+ \w+/, `${weekday} ${part}`);
+}
+
+/**
+ * A recording left running for a whole trip mixes drives with the actual rides or hikes.
+ * Split at long pauses, cut out stretches driven at highway speed, and keep the pieces
+ * that look like a human-powered outing.
+ */
+export function splitActivities(trk) {
+  const pts = trk.points;
+  if (!pts[0].time || !pts[pts.length - 1].time) return [trk];
+  const n = pts.length;
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
+  // Average speed over a ten-minute window centered on each point.
+  const driving = new Uint8Array(n);
+  const HALF = 5 * 60 * 1000;
+  for (let i = 0, a = 0, b = 0; i < n; i++) {
+    while (pts[a].time < pts[i].time - HALF) a++;
+    while (b < n - 1 && pts[b + 1].time <= pts[i].time + HALF) b++;
+    const dt = (pts[b].time - pts[a].time) / 1000;
+    if (dt > 120 && (cum[b] - cum[a]) / dt > 60 / 3.6) driving[i] = 1;
+  }
+  const pieces = [];
+  let cur = [];
+  const flush = () => {
+    if (cur.length > 1) pieces.push(cur);
+    cur = [];
+  };
+  for (let i = 0; i < n; i++) {
+    if (driving[i] || (i > 0 && pts[i].time - pts[i - 1].time > 2 * 3600 * 1000)) flush();
+    if (!driving[i]) cur.push(pts[i]);
+  }
+  flush();
+  if (pieces.length === 1 && pieces[0].length === n) return [trk];
+  const kept = pieces.filter((p) => {
+    const s = computeStats(p);
+    const { gain } = elevationGain(p.map((q) => q.ele).filter((e) => e != null));
+    const speed = s.distance / Math.max(s.moving || s.elapsed || 1, 1);
+    return s.distance > 3000 && speed < 30 / 3.6 && (gain > 100 || speed < 20 / 3.6);
+  });
+  return kept.map((points) => ({ ...trk, name: autoName(trk.name, points[0].time), points }));
 }
 
 function computeStats(points) {
@@ -271,6 +337,8 @@ async function loadMeta() {
 }
 
 async function main() {
+  // Start from an empty output folder so removed or renamed tracks do not linger.
+  await fs.rm(OUT_DIR, { recursive: true, force: true });
   await fs.mkdir(OUT_DIR, { recursive: true });
   const meta = await loadMeta();
   const files = (await fs.readdir(TRACKS_DIR)).filter((f) => f.toLowerCase().endsWith('.gpx')).sort();
@@ -278,9 +346,9 @@ async function main() {
   const used = new Set();
   for (const file of files) {
     const xml = await fs.readFile(path.join(TRACKS_DIR, file), 'utf8');
-    for (const trk of parseGpx(xml, path.basename(file, path.extname(file)))) {
+    for (const trk of parseGpx(xml, path.basename(file, path.extname(file))).flatMap(splitActivities)) {
       const stats = computeStats(trk.points);
-      const day = stats.start ? new Date(stats.start).toISOString().slice(0, 10) : null;
+      const day = stats.start ? localDate(stats.start) : null;
       let slug = slugify(trk.name);
       if (used.has(slug) && day) slug = `${slug}-${day}`;
       for (let n = 2; used.has(slug); n++) slug = `${slugify(trk.name)}-${n}`;
@@ -356,6 +424,10 @@ async function main() {
         },
         preview: previewPath(pts),
       };
+      const inside = (x, y) => x > bbox.minX && x < bbox.maxX && y > bbox.minY && y < bbox.maxY;
+      const waypoints = trk.waypoints
+        .filter((w) => inside(mercX(w.lon), mercY(w.lat)))
+        .map((w) => ({ x: Math.round((mercX(w.lon) - cx) * k), y: Math.round((mercY(w.lat) - cy) * k), name: w.name, sym: w.sym }));
       const terrainMeta = {
         nx: terrain.nx,
         ny: terrain.ny,
@@ -365,7 +437,7 @@ async function main() {
         file: `${slug}.terrain.bin`,
       };
       await fs.writeFile(path.join(OUT_DIR, `${slug}.terrain.bin`), Buffer.from(terrain.heights.buffer));
-      await fs.writeFile(path.join(OUT_DIR, `${slug}.json`), JSON.stringify({ ...record, terrain: terrainMeta, track: pts }));
+      await fs.writeFile(path.join(OUT_DIR, `${slug}.json`), JSON.stringify({ ...record, terrain: terrainMeta, waypoints, track: pts }));
       index.push(record);
       console.log(`terrain z${terrain.zoom} ${terrain.nx}×${terrain.ny} from ${terrain.tiles} tiles`);
     }
@@ -375,7 +447,9 @@ async function main() {
   console.log(`${index.length} track(s) written to public/data/`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
