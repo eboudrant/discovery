@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6efe0" />
+    <meta name="description" content="Rides and hikes across the American West, each on its own watercolor 3D terrain map." />
+    <title>US West Tracks</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+  </head>
+  <body class="index">
+    <div class="paper"></div>
+    <main class="wrap">
+      <header class="masthead">
+        <p class="eyebrow">Field journal</p>
+        <h1>US <em>West</em></h1>
+        <p class="lede">Every ride and hike, painted onto the mountains it crossed.</p>
+        <div class="totals" id="totals"></div>
+      </header>
+      <section class="grid" id="grid" aria-live="polite"></section>
+    </main>
+    <footer class="foot">
+      Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> · Tracks recorded with Gaia GPS · Inspired by
+      <a href="https://github.com/kneath/tahoe-trails">tahoe-trails</a>
+    </footer>
+    <script type="module" src="/src/index.ts"></script>
+  </body>
+</html>

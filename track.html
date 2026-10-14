@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6efe0" />
+    <meta name="description" content="Explore this track on a watercolor 3D terrain map." />
+    <title>Track · 3D Trail Map</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+  </head>
+  <body class="track">
+    <div class="paper"></div>
+    <div id="stage" class="stage">
+      <div class="loading" id="loading">Painting the mountains…</div>
+    </div>
+    <aside class="panel">
+      <a class="back" href="./">← All tracks</a>
+      <header>
+        <h1 id="title">&nbsp;</h1>
+        <p class="meta" id="meta"></p>
+      </header>
+      <p class="summary" id="summary"></p>
+      <dl class="stats" id="stats"></dl>
+      <figure class="profile">
+        <canvas id="profile" aria-label="Elevation profile"></canvas>
+        <figcaption><span id="profile-readout">Hover or drag to explore</span></figcaption>
+      </figure>
+      <div class="actions">
+        <button id="play" class="play" type="button" disabled>▶ Play Ride</button>
+        <a id="gpx-link" class="link" hidden>View original ↗</a>
+      </div>
+    </aside>
+    <script type="module" src="/src/track.ts"></script>
+  </body>
+</html>
