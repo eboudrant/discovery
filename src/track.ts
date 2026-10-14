@@ -7,6 +7,7 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { escapeHtml, feet, fmtDateRange, fmtDuration, fmtFeet, fmtMiles, miles, type TrackData } from './format';
 import { Heightmap, buildTerrain } from './terrain';
 import { Profile } from './profile';
+import { SATELLITE_CREDIT, loadSatellite } from './satellite';
 
 const ACCENT = 0xb5452f;
 
@@ -17,7 +18,8 @@ async function load(slug: string) {
   });
   const buf = await fetch(`data/${data.terrain.file}`).then((r) => r.arrayBuffer());
   const t = data.terrain;
-  return { data, hm: new Heightmap(t.nx, t.ny, t.width, t.height, new Int16Array(buf)) };
+  const water = t.water ? await new THREE.TextureLoader().loadAsync(`data/${t.water}`).catch(() => null) : null;
+  return { data, water, hm: new Heightmap(t.nx, t.ny, t.width, t.height, new Int16Array(buf)) };
 }
 
 function renderInfo(d: TrackData) {
@@ -87,7 +89,7 @@ async function main() {
     location.replace('./');
     return;
   }
-  const { data, hm } = await load(slug);
+  const { data, hm, water } = await load(slug);
   renderInfo(data);
 
   const stage = document.getElementById('stage')!;
@@ -99,8 +101,43 @@ async function main() {
   const scene = new THREE.Scene();
   const size = Math.max(hm.width, hm.height);
   const camera = new THREE.PerspectiveCamera(32, 1, size / 500, size * 20);
-  const { group, relief } = buildTerrain(hm);
+  const terrain = buildTerrain(hm, water);
+  const { group, relief } = terrain;
   scene.add(group);
+
+  // Painted (watercolor) or satellite surface; the choice is remembered across tracks.
+  const styleBtn = document.getElementById('style') as HTMLButtonElement;
+  const credit = document.getElementById('credit')!;
+  let satMat: THREE.ShaderMaterial | null = null;
+  const setStyle = async (style: 'painted' | 'satellite') => {
+    try {
+      localStorage.setItem('surface', style);
+    } catch {}
+    if (style === 'satellite' && !satMat) {
+      styleBtn.disabled = true;
+      styleBtn.textContent = 'Loading imagery…';
+      try {
+        satMat = terrain.satellite(await loadSatellite(data.terrain.mercator, renderer));
+      } catch (err) {
+        console.warn(err);
+        styleBtn.disabled = false;
+        styleBtn.textContent = 'Satellite unavailable';
+        return;
+      }
+      styleBtn.disabled = false;
+    }
+    terrain.mesh.material = style === 'satellite' ? satMat! : terrain.painted;
+    styleBtn.textContent = style === 'satellite' ? 'Painted' : 'Satellite';
+    styleBtn.dataset.style = style;
+    credit.textContent = style === 'satellite' ? SATELLITE_CREDIT : '';
+  };
+  styleBtn.addEventListener('click', () => setStyle(styleBtn.dataset.style === 'satellite' ? 'painted' : 'satellite'));
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem('surface');
+  } catch {}
+  styleBtn.dataset.style = 'painted';
+  if (saved === 'satellite') setStyle('satellite');
 
   // The track: a pale halo under a red ink line.
   const { pts, dist } = drape(data, hm);

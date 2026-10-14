@@ -62,7 +62,9 @@ const noiseGlsl = /* glsl */ `
 const terrainVertex = /* glsl */ `
   varying vec3 vWorld;
   varying vec3 vNormal;
+  varying vec2 vUv;
   void main() {
+    vUv = uv;
     vec4 w = modelMatrix * vec4(position, 1.0);
     vWorld = w.xyz;
     vNormal = normalize(mat3(modelMatrix) * normal);
@@ -76,8 +78,11 @@ const terrainFragment = /* glsl */ `
   uniform float uScale;
   uniform float uContour;
   uniform vec3 uSun;
+  uniform sampler2D uWater;
+  uniform float uHasWater;
   varying vec3 vWorld;
   varying vec3 vNormal;
+  varying vec2 vUv;
   ${noiseGlsl}
 
   vec3 palette(float t) {
@@ -125,9 +130,33 @@ const terrainFragment = /* glsl */ `
     float line = 1.0 - smoothstep(0.0, cw * 1.2, abs(fract(c) - 0.5) - 0.5 + cw);
     col = mix(col, col * 0.82, line * 0.25);
 
+    // Lakes and rivers: a cool wash, darker where pigment pools at the shore.
+    if (uHasWater > 0.5) {
+      float wet = texture2D(uWater, vUv).r;
+      float edge = smoothstep(0.15, 0.5, wet) * (1.0 - smoothstep(0.6, 0.95, wet));
+      vec3 water = mix(vec3(0.47, 0.62, 0.74), vec3(0.58, 0.72, 0.80), blot) * (0.95 + grain * 0.08);
+      col = mix(col, water, smoothstep(0.2, 0.6, wet));
+      col = mix(col, vec3(0.33, 0.47, 0.60), edge * 0.35);
+    }
+
     // Lift toward paper so the palette reads as wash, not paint.
     col = mix(col, vec3(0.965, 0.937, 0.878), 0.12);
     gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+const satelliteFragment = /* glsl */ `
+  uniform sampler2D uMap;
+  uniform vec3 uSun;
+  varying vec3 vWorld;
+  varying vec3 vNormal;
+  varying vec2 vUv;
+  void main() {
+    vec3 col = texture2D(uMap, vUv).rgb;
+    // Imagery already carries its own shadows; add a light hillshade so relief still reads.
+    float shade = 0.82 + 0.3 * max(dot(normalize(vNormal), normalize(uSun)), 0.0);
+    gl_FragColor = vec4(col * shade, 1.0);
+    #include <colorspace_fragment>
   }
 `;
 
@@ -150,7 +179,7 @@ const skirtFragment = /* glsl */ `
   }
 `;
 
-export function buildTerrain(hm: Heightmap) {
+export function buildTerrain(hm: Heightmap, water: THREE.Texture | null) {
   const group = new THREE.Group();
   const geo = new THREE.PlaneGeometry(hm.width, hm.height, hm.nx - 1, hm.ny - 1);
   geo.rotateX(-Math.PI / 2); // plane +y (north) becomes -z
@@ -170,6 +199,8 @@ export function buildTerrain(hm: Heightmap) {
       uScale: { value: scale / 4 },
       uContour: { value: (hm.max - hm.min > 600 ? 100 : 40) * EXAGGERATION },
       uSun: { value: sun },
+      uWater: { value: water },
+      uHasWater: { value: water ? 1 : 0 },
     },
     extensions: { derivatives: true } as never,
   });
@@ -227,5 +258,12 @@ export function buildTerrain(hm: Heightmap) {
   );
   group.add(shadow);
 
-  return { group, base, relief };
+  const satellite = (map: THREE.Texture) =>
+    new THREE.ShaderMaterial({
+      vertexShader: terrainVertex,
+      fragmentShader: satelliteFragment,
+      uniforms: { uMap: { value: map }, uSun: { value: sun } },
+    });
+
+  return { group, base, relief, mesh, painted: terrainMat, satellite };
 }
