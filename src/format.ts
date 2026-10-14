@@ -21,6 +21,15 @@ export interface TrackSummary {
   preview: string;
 }
 
+export interface Stop {
+  m: number;
+  x: number;
+  y: number;
+  start: string;
+  end: string;
+  nights: number;
+}
+
 export interface TrackData extends TrackSummary {
   terrain: {
     nx: number;
@@ -32,6 +41,8 @@ export interface TrackData extends TrackSummary {
     mercator: { minX: number; maxX: number; minY: number; maxY: number };
   };
   waypoints: { x: number; y: number; name: string; sym: string }[];
+  /** Places the recording sat still for 45+ minutes; nights > 0 means camp. */
+  stops: Stop[];
   /** [east m, north m, elevation m, cumulative distance m, seconds since start | null] */
   track: [number, number, number, number, number | null][];
 }
@@ -88,4 +99,10 @@ export function fmtClock(ms: number) {
     minute: '2-digit',
     timeZone: TIME_ZONE,
   });
+}
+
+export function fmtStop(st: Stop) {
+  if (st.nights > 0) return `Camp · ${st.nights} night${st.nights > 1 ? 's' : ''}`;
+  const min = Math.round((Date.parse(st.end) - Date.parse(st.start)) / 60000);
+  return `Stop · ${min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : `${min} min`}`;
 }

@@ -1,10 +1,10 @@
 import './style.css';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { escapeHtml, feet, fmtClock, fmtDateRange, fmtDuration, fmtFeet, fmtMiles, miles, type TrackData } from './format';
+import { escapeHtml, feet, fmtClock, fmtDateRange, fmtStop, type Stop, fmtDuration, fmtFeet, fmtMiles, miles, type TrackData } from './format';
 import { Heightmap, buildTerrain } from './terrain';
 import { Profile } from './profile';
 import { SATELLITE_CREDIT, loadSatellite } from './satellite';
@@ -156,25 +156,77 @@ async function main() {
     marker.position.set(w.x, hm.y(hm.at(w.x, w.y)) + size / 400, -w.y);
     scene.add(marker);
   }
+  // Camps and stops, merged when they are at the same spot (several nights at one camp).
+  const places: { x: number; y: number; nights: number; stops: Stop[] }[] = [];
+  for (const st of data.stops ?? []) {
+    const same = places.find((p) => Math.hypot(p.x - st.x, p.y - st.y) < 300);
+    if (same) {
+      same.nights += st.nights;
+      same.stops.push(st);
+    } else places.push({ x: st.x, y: st.y, nights: st.nights, stops: [st] });
+  }
+  const labelLayer = document.getElementById('labels')!;
+  const labels = places.map((p) => {
+    const pos = new THREE.Vector3(p.x, hm.y(hm.at(p.x, p.y)) + size / 400, -p.y);
+    const marker = dot(p.nights ? '#2e5d3a' : '#6b6156', 20);
+    marker.position.copy(pos);
+    scene.add(marker);
+    const el = document.createElement('div');
+    el.className = 'map-label';
+    el.textContent = p.nights ? `Camp · ${p.nights} night${p.nights > 1 ? 's' : ''}` : fmtStop(p.stops[0]);
+    labelLayer.appendChild(el);
+    return { pos, el };
+  });
+  const v = new THREE.Vector3();
+  const placeLabels = () => {
+    const w = stage.clientWidth;
+    const h = stage.clientHeight;
+    for (const l of labels) {
+      v.copy(l.pos).project(camera);
+      const visible = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
+      l.el.style.display = visible ? '' : 'none';
+      if (visible) l.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -150%)`;
+    }
+  };
+
   const rider = dot('#b5452f', 34);
   rider.renderOrder = 6;
   rider.visible = false;
   scene.add(rider);
 
-  // Camera framing: three-quarter view from the south-southwest.
-  const controls = new OrbitControls(camera, renderer.domElement);
+  // Map-style controls: drag to pan, scroll/pinch to zoom toward the cursor,
+  // right-drag or two-finger twist to rotate and tilt.
+  const controls = new MapControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.maxPolarAngle = Math.PI * 0.46;
-  controls.minDistance = size * 0.08;
+  controls.dampingFactor = 0.1;
+  controls.zoomToCursor = true;
+  controls.maxPolarAngle = Math.PI * 0.47;
+  controls.minDistance = size * 0.005;
   controls.maxDistance = size * 3;
-  const home = { target: new THREE.Vector3(0, relief * 0.35, 0), dir: new THREE.Vector3(-0.35, 0.82, 0.95).normalize() };
-  const resetView = () => {
-    // Fit the whole block: back off further on narrow (portrait) screens.
-    const fit = (size * 0.62) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.min(1, camera.aspect * 1.1);
-    controls.target.copy(home.target);
-    camera.position.copy(home.target).addScaledVector(home.dir, fit);
+  // Home view: three-quarter view from the south-southwest, framed on the track.
+  const trackBox = new THREE.Box3().setFromPoints(pts);
+  const homeTarget = trackBox.getCenter(new THREE.Vector3());
+  const homeDir = new THREE.Vector3(-0.35, 0.82, 0.95).normalize();
+  const trackSize = Math.max(trackBox.max.x - trackBox.min.x, trackBox.max.z - trackBox.min.z, size * 0.15);
+  const homeView = () => {
+    // Back off further on narrow (portrait) screens.
+    const fit = (trackSize * 0.75) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.min(1, camera.aspect * 1.1);
+    return { target: homeTarget.clone(), position: homeTarget.clone().addScaledVector(homeDir, fit) };
   };
+  let flight: { from: { target: THREE.Vector3; position: THREE.Vector3 }; t0: number } | null = null;
+  const resetView = (animate = false) => {
+    if (animate) {
+      flight = { from: { target: controls.target.clone(), position: camera.position.clone() }, t0: performance.now() };
+      return;
+    }
+    const v = homeView();
+    controls.target.copy(v.target);
+    camera.position.copy(v.position);
+  };
+  document.getElementById('recenter')!.addEventListener('click', () => {
+    if (playing) stopPlay();
+    resetView(true);
+  });
 
   const resize = () => {
     const w = stage.clientWidth;
@@ -218,13 +270,21 @@ async function main() {
     const ele = data.track[Math.max(i, 0)][2];
     const parts = [`${miles(m).toFixed(1)} mi`, `${Math.round(feet(ele)).toLocaleString('en-US')} ft`];
     if (timed) parts.unshift(fmtClock(timeAt(m)));
+    const near = stops.find((st) => Math.abs(st.m - m) < total * 0.004);
+    if (near && !playing) parts.splice(0, 1, `${fmtStop(near)}: ${fmtClock(Date.parse(near.start))} → ${fmtClock(Date.parse(near.end))}`);
     readout.textContent = parts.join(' · ');
     profile.setCursor(m);
   };
-  const profile = new Profile(document.getElementById('profile') as HTMLCanvasElement, data.track, (m) => {
-    if (playing) stopPlay();
-    showAt(m);
-  });
+  const stops = data.stops ?? [];
+  const profile = new Profile(
+    document.getElementById('profile') as HTMLCanvasElement,
+    data.track,
+    stops.map((st) => ({ m: st.m, label: fmtStop(st) })),
+    (m) => {
+      if (playing) stopPlay();
+      showAt(m);
+    },
+  );
 
   // Play Ride: chase camera that follows the marker along the track.
   const playBtn = document.getElementById('play') as HTMLButtonElement;
@@ -251,8 +311,33 @@ async function main() {
   const look = new THREE.Vector3();
   const ahead = new THREE.Vector3();
   const desired = new THREE.Vector3();
+  // At each stop the marker waits while the clock runs through it; Skip jumps to departure.
+  const card = document.getElementById('stop-card')!;
+  const skipBtn = document.getElementById('skip') as HTMLButtonElement;
+  let nextStop = 0;
+  let hold: { st: Stop; t0: number; dur: number } | null = null;
+  const endHold = () => {
+    hold = null;
+    card.hidden = true;
+  };
+  const beginHold = (st: Stop, now: number) => {
+    const hours = (Date.parse(st.end) - Date.parse(st.start)) / 3.6e6;
+    const dur = st.nights > 0 ? THREE.MathUtils.clamp(hours * 350, 6000, 16000) : THREE.MathUtils.clamp(hours * 1200, 1500, 3500);
+    hold = { st, t0: now, dur };
+    document.getElementById('stop-title')!.textContent = fmtStop(st);
+    document.getElementById('stop-range')!.textContent = `${fmtClock(Date.parse(st.start))} → ${fmtClock(Date.parse(st.end))}`;
+    skipBtn.hidden = st.nights === 0;
+    card.hidden = false;
+  };
+  skipBtn.addEventListener('click', () => {
+    if (hold) hold.t0 = -Infinity;
+  });
+
   const startPlay = () => {
     if (progress >= 1) progress = 0;
+    const here = distAt(progress);
+    nextStop = stops.findIndex((st) => st.m > here + 1);
+    if (nextStop < 0) nextStop = stops.length;
     playing = true;
     last = performance.now();
     controls.enabled = false;
@@ -261,12 +346,17 @@ async function main() {
   };
   const stopPlay = () => {
     playing = false;
+    endHold();
     controls.enabled = true;
     controls.target.copy(look);
     playBtn.textContent = progress >= 1 ? '↺ Replay' : '▶ Play Ride';
   };
   playBtn.addEventListener('click', () => (playing ? stopPlay() : startPlay()));
-  renderer.domElement.addEventListener('pointerdown', () => playing && stopPlay());
+  renderer.domElement.addEventListener('pointerdown', () => {
+    flight = null;
+    if (playing) stopPlay();
+  });
+  renderer.domElement.addEventListener('wheel', () => (flight = null), { passive: true });
   addEventListener('keydown', (e) => {
     if (e.key === ' ' && e.target === document.body) {
       e.preventDefault();
@@ -274,7 +364,7 @@ async function main() {
     }
     if (e.key === 'Escape') {
       if (playing) stopPlay();
-      resetView();
+      resetView(true);
     }
   });
 
@@ -282,9 +372,24 @@ async function main() {
     if (playing) {
       const dt = now - last;
       last = now;
-      progress = Math.min(1, progress + dt / duration);
-      const m = distAt(progress);
-      showAt(m);
+      let m: number;
+      if (hold) {
+        const f = Math.min(1, (now - hold.t0) / hold.dur);
+        const clockMs = Date.parse(hold.st.start) + f * (Date.parse(hold.st.end) - Date.parse(hold.st.start));
+        document.getElementById('stop-clock')!.textContent = fmtClock(clockMs);
+        m = hold.st.m;
+        showAt(m);
+        readout.textContent = `${fmtClock(clockMs)} · ${miles(m).toFixed(1)} mi`;
+        if (f >= 1) endHold();
+      } else {
+        progress = Math.min(1, progress + dt / duration);
+        m = distAt(progress);
+        if (nextStop < stops.length && m >= stops[nextStop].m) {
+          m = stops[nextStop].m;
+          beginHold(stops[nextStop++], now);
+        }
+        showAt(m);
+      }
       // Look a little ahead of the rider, camera trails behind and above.
       pointAt(pts, dist, Math.min(total, m + total * 0.04), ahead);
       const heading = ahead.clone().sub(rider.position).setY(0);
@@ -301,9 +406,18 @@ async function main() {
       camera.lookAt(look);
       if (progress >= 1) stopPlay();
     } else {
+      if (flight) {
+        const f = Math.min(1, (now - flight.t0) / 700);
+        const e = f * f * (3 - 2 * f);
+        const to = homeView();
+        controls.target.lerpVectors(flight.from.target, to.target, e);
+        camera.position.lerpVectors(flight.from.position, to.position, e);
+        if (f >= 1) flight = null;
+      }
       controls.update();
     }
     renderer.render(scene, camera);
+    placeLabels();
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);

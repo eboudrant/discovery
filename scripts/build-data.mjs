@@ -328,6 +328,36 @@ function previewPath(pts) {
     .join('');
 }
 
+/**
+ * Places where the recording sat still for a while: lunch stops and camps.
+ * A stop is a run of points staying within 200 m of where it began for 45 minutes or more.
+ */
+function findStops(points, cum, xy) {
+  const stops = [];
+  let i = 0;
+  while (i < points.length - 1) {
+    if (!points[i].time) return stops;
+    let j = i;
+    while (j + 1 < points.length && haversine(points[i], points[j + 1]) < 200) j++;
+    const seconds = (points[j].time - points[i].time) / 1000;
+    if (seconds >= 45 * 60) {
+      const days = (a, b) => Math.round((Date.parse(localDate(b)) - Date.parse(localDate(a))) / 86400000);
+      stops.push({
+        m: Math.round(cum[i]),
+        x: Math.round(xy[i][0]),
+        y: Math.round(xy[i][1]),
+        start: new Date(points[i].time).toISOString(),
+        end: new Date(points[j].time).toISOString(),
+        nights: days(points[i].time, points[j].time),
+      });
+      i = j + 1;
+    } else {
+      i++;
+    }
+  }
+  return stops;
+}
+
 async function loadMeta() {
   try {
     return JSON.parse(await fs.readFile(path.join(TRACKS_DIR, 'meta.json'), 'utf8'));
@@ -439,7 +469,13 @@ async function main() {
         mercator: bbox,
       };
       await fs.writeFile(path.join(OUT_DIR, `${slug}.terrain.bin`), Buffer.from(terrain.heights.buffer));
-      await fs.writeFile(path.join(OUT_DIR, `${slug}.json`), JSON.stringify({ ...record, terrain: terrainMeta, waypoints, track: pts }));
+      const stops = findStops(
+        trk.points,
+        stats.cum,
+        trk.points.map((_, i) => [(mx[i] - cx) * k, (my[i] - cy) * k]),
+      );
+      await fs.writeFile(path.join(OUT_DIR, `${slug}.json`), JSON.stringify({ ...record, terrain: terrainMeta, waypoints, stops, track: pts }));
+      for (const st of stops) console.log(`  stop at ${(st.m / 1609.344).toFixed(1)} mi: ${st.start} → ${st.end} (${st.nights} night(s))`);
       index.push(record);
       console.log(`terrain z${terrain.zoom} ${terrain.nx}×${terrain.ny} from ${terrain.tiles} tiles`);
     }

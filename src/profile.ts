@@ -13,6 +13,7 @@ export class Profile {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly track: Pt[],
+    private readonly marks: { m: number; label: string }[],
     onHover: (m: number | null) => void,
   ) {
     this.total = track[track.length - 1][3];
@@ -99,6 +100,28 @@ export class Profile {
     const peakAt = this.track.find((p) => p[2] === this.peak)!;
     ctx.textAlign = X(peakAt[3]) < 40 ? 'left' : X(peakAt[3]) > w - 40 ? 'right' : 'center';
     ctx.fillText(`${Math.round(feet(this.peak)).toLocaleString('en-US')} ft`, X(peakAt[3]), Math.max(12, Y(this.peak) - 3));
+
+    // Stops and camps: a small flag at the top of the chart.
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const mk of this.marks) {
+      const x = X(mk.m);
+      ctx.strokeStyle = 'rgba(47, 42, 36, 0.35)';
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, 4);
+      ctx.lineTo(x, bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#2f2a24';
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + 4, 7);
+      ctx.lineTo(x - 4, 7);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.textBaseline = 'bottom';
 
     if (this.cursor != null) {
       const x = X(this.cursor);

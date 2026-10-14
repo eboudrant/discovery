@@ -12,6 +12,14 @@
   <body class="track">
     <div id="stage" class="stage">
       <div class="loading" id="loading">Loading satellite imagery…</div>
+      <div id="labels" class="labels"></div>
+      <button id="recenter" class="recenter" type="button" title="Recenter on the track (Esc)">⌖ Recenter</button>
+      <div id="stop-card" class="stop-card" hidden>
+        <p class="stop-title" id="stop-title"></p>
+        <p class="stop-clock" id="stop-clock"></p>
+        <p class="stop-range" id="stop-range"></p>
+        <button id="skip" class="skip" type="button">Skip to departure ⏭</button>
+      </div>
     </div>
     <aside class="panel">
       <a class="back" href="./">← All tracks</a>

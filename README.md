@@ -32,6 +32,8 @@ Modeled on [Beckwourth Peak](https://beckwourth.bkxc.chatgpt.site/) and the open
 
 Every point keeps its recorded timestamp, from the GPX in `tracks/` through to the page, so photos can be matched to where they were taken. The elevation readout shows the time of day (Pacific) under the cursor, and Play Ride follows the recorded clock with pauses over two minutes squeezed out.
 
+Stops of 45 minutes or more are detected from the timestamps. Camps (stops spanning a night) are labeled on the map and flagged on the elevation profile; Play Ride waits at each one while the clock runs through it, with a **Skip to departure** button.
+
 ## Local development
 
 ```sh
