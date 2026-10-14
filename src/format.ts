@@ -75,3 +75,17 @@ export function fmtDateRange(start: string | null, end: string | null) {
 export function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
+
+export const TIME_ZONE = 'America/Los_Angeles';
+
+/** "Fri Oct 9, 10:42 AM" in Pacific time, the clock the photos were taken on. */
+export function fmtClock(ms: number) {
+  return new Date(ms).toLocaleString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: TIME_ZONE,
+  });
+}

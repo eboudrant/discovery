@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { escapeHtml, feet, fmtDateRange, fmtDuration, fmtFeet, fmtMiles, miles, type TrackData } from './format';
+import { escapeHtml, feet, fmtClock, fmtDateRange, fmtDuration, fmtFeet, fmtMiles, miles, type TrackData } from './format';
 import { Heightmap, buildTerrain } from './terrain';
 import { Profile } from './profile';
 import { SATELLITE_CREDIT, loadSatellite } from './satellite';
@@ -194,6 +194,18 @@ async function main() {
   // Elevation profile <-> marker.
   const total = dist[dist.length - 1];
   const readout = document.getElementById('profile-readout')!;
+  // Real time along the track (ms since epoch), interpolated by distance.
+  const startMs = data.start ? Date.parse(data.start) : null;
+  const timed = startMs != null && data.track.every((p) => p[4] != null);
+  const timeAt = (m: number) => {
+    const tr = data.track;
+    let i = tr.findIndex((p) => p[3] >= m);
+    if (i <= 0) return startMs! + (tr[i < 0 ? tr.length - 1 : 0][4] as number) * 1000;
+    const [a, b] = [tr[i - 1], tr[i]];
+    const f = (m - a[3]) / Math.max(b[3] - a[3], 1e-6);
+    return startMs! + ((a[4] as number) + f * ((b[4] as number) - (a[4] as number))) * 1000;
+  };
+
   const showAt = (m: number | null) => {
     if (m == null) {
       rider.visible = playing;
@@ -204,7 +216,9 @@ async function main() {
     pointAt(pts, dist, m, rider.position);
     const i = Math.min(data.track.length - 1, data.track.findIndex((p) => p[3] >= m));
     const ele = data.track[Math.max(i, 0)][2];
-    readout.textContent = `${miles(m).toFixed(1)} mi · ${Math.round(feet(ele)).toLocaleString('en-US')} ft`;
+    const parts = [`${miles(m).toFixed(1)} mi`, `${Math.round(feet(ele)).toLocaleString('en-US')} ft`];
+    if (timed) parts.unshift(fmtClock(timeAt(m)));
+    readout.textContent = parts.join(' · ');
     profile.setCursor(m);
   };
   const profile = new Profile(document.getElementById('profile') as HTMLCanvasElement, data.track, (m) => {
@@ -218,6 +232,22 @@ async function main() {
   let progress = 0;
   let last = 0;
   const duration = THREE.MathUtils.clamp(miles(total) * 2.2, 20, 60) * 1000;
+  // Playback follows the recorded clock, so the marker slows on climbs and speeds up on
+  // descents. Pauses longer than two minutes (lunch, camp, overnight) are squeezed out.
+  const clock: number[] = [0];
+  for (let i = 1; i < data.track.length; i++) {
+    const dt = timed ? (data.track[i][4] as number) - (data.track[i - 1][4] as number) : data.track[i][3] - data.track[i - 1][3];
+    clock.push(clock[i - 1] + (timed && dt > 120 ? 5 : Math.max(dt, 0)));
+  }
+  const clockEnd = clock[clock.length - 1] || 1;
+  const distAt = (progress: number) => {
+    const c = progress * clockEnd;
+    const tr = data.track;
+    let i = clock.findIndex((v) => v >= c);
+    if (i <= 0) return i < 0 ? total : 0;
+    const f = (c - clock[i - 1]) / Math.max(clock[i] - clock[i - 1], 1e-6);
+    return tr[i - 1][3] + f * (tr[i][3] - tr[i - 1][3]);
+  };
   const look = new THREE.Vector3();
   const ahead = new THREE.Vector3();
   const desired = new THREE.Vector3();
@@ -227,7 +257,7 @@ async function main() {
     last = performance.now();
     controls.enabled = false;
     playBtn.textContent = '❚❚ Pause';
-    look.copy(pointAt(pts, dist, progress * total));
+    look.copy(pointAt(pts, dist, distAt(progress)));
   };
   const stopPlay = () => {
     playing = false;
@@ -253,7 +283,7 @@ async function main() {
       const dt = now - last;
       last = now;
       progress = Math.min(1, progress + dt / duration);
-      const m = progress * total;
+      const m = distAt(progress);
       showAt(m);
       // Look a little ahead of the rider, camera trails behind and above.
       pointAt(pts, dist, Math.min(total, m + total * 0.04), ahead);
