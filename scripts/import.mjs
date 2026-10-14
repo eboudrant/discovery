@@ -27,9 +27,16 @@ const closest = (pts, target, startAt = 0) => {
   for (let i = startAt; i < pts.length; i++) if (dist2(pts[i], target) < dist2(pts[best], target)) best = i;
   return best;
 };
+// Widen a cut point to the whole visit there, so a stop in town is kept rather than split.
+const VISIT = 0.005 ** 2; // ~500 m, in the same squared-degree units as dist2
 function trim(trk) {
-  const a = from ? closest(trk.points, from) : 0;
-  const b = to ? closest(trk.points, to, a) : trk.points.length - 1;
+  const pts = trk.points;
+  let a = from ? closest(pts, from) : 0;
+  const ca = pts[a];
+  while (from && a > 0 && dist2(pts[a - 1], [ca.lat, ca.lon]) < VISIT) a--;
+  let b = to ? closest(pts, to, a) : pts.length - 1;
+  const cb = pts[b];
+  while (to && b < pts.length - 1 && dist2(pts[b + 1], [cb.lat, cb.lon]) < VISIT) b++;
   return [{ ...trk, name: rename || trk.name, points: trk.points.slice(a, b + 1) }];
 }
 if (!files.length) {

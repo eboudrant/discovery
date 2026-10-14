@@ -104,5 +104,5 @@ export function fmtClock(ms: number) {
 export function fmtStop(st: Stop) {
   if (st.nights > 0) return `Camp · ${st.nights} night${st.nights > 1 ? 's' : ''}`;
   const min = Math.round((Date.parse(st.end) - Date.parse(st.start)) / 60000);
-  return `Stop · ${min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : `${min} min`}`;
+  return `Stopped for ${min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : `${min} min`}`;
 }

@@ -330,17 +330,20 @@ function previewPath(pts) {
 
 /**
  * Places where the recording sat still for a while: lunch stops and camps.
- * A stop is a run of points staying within 200 m of where it began for 45 minutes or more.
+ * A stop is a run of points staying within STOP_RADIUS of where it began for MIN_STOP_SECONDS or more.
  */
+const MIN_STOP_SECONDS = 5 * 60;
+const STOP_RADIUS = 80; // meters
+
 function findStops(points, cum, xy) {
   const stops = [];
   let i = 0;
   while (i < points.length - 1) {
     if (!points[i].time) return stops;
     let j = i;
-    while (j + 1 < points.length && haversine(points[i], points[j + 1]) < 200) j++;
+    while (j + 1 < points.length && haversine(points[i], points[j + 1]) < STOP_RADIUS) j++;
     const seconds = (points[j].time - points[i].time) / 1000;
-    if (seconds >= 45 * 60) {
+    if (seconds >= MIN_STOP_SECONDS) {
       const days = (a, b) => Math.round((Date.parse(localDate(b)) - Date.parse(localDate(a))) / 86400000);
       stops.push({
         m: Math.round(cum[i]),
@@ -355,7 +358,15 @@ function findStops(points, cum, xy) {
       i++;
     }
   }
-  return stops;
+  // A brief GPS jump can split one stop in two; join stops a couple of minutes apart.
+  return stops.reduce((out, st) => {
+    const prev = out[out.length - 1];
+    if (prev && Date.parse(st.start) - Date.parse(prev.end) < 3 * 60 * 1000 && Math.hypot(st.x - prev.x, st.y - prev.y) < STOP_RADIUS * 2) {
+      prev.end = st.end;
+      prev.nights = Math.round((Date.parse(localDate(Date.parse(prev.end))) - Date.parse(localDate(Date.parse(prev.start)))) / 86400000);
+    } else out.push(st);
+    return out;
+  }, []);
 }
 
 async function loadMeta() {

@@ -168,24 +168,43 @@ async function main() {
   const labelLayer = document.getElementById('labels')!;
   const labels = places.map((p) => {
     const pos = new THREE.Vector3(p.x, hm.y(hm.at(p.x, p.y)) + size / 400, -p.y);
-    const marker = dot(p.nights ? '#2e5d3a' : '#6b6156', 20);
+    const marker = dot(p.nights ? '#2e5d3a' : '#d9a441', p.nights ? 20 : 14);
     marker.position.copy(pos);
     scene.add(marker);
     const el = document.createElement('div');
     el.className = 'map-label';
-    el.textContent = p.nights ? `Camp · ${p.nights} night${p.nights > 1 ? 's' : ''}` : fmtStop(p.stops[0]);
-    labelLayer.appendChild(el);
-    return { pos, el };
+    // Several short stops at one spot read as their total time there.
+    const first = p.stops[0];
+    const minutes = p.stops.reduce((a, st) => a + (Date.parse(st.end) - Date.parse(st.start)) / 60000, 0);
+    el.textContent = p.nights
+      ? `Camp · ${p.nights} night${p.nights > 1 ? 's' : ''}`
+      : fmtStop({ ...first, end: new Date(Date.parse(first.start) + minutes * 60000).toISOString() }) + (p.stops.length > 1 ? ` (${p.stops.length} stops)` : '');
+    // Short stops get a dot only, to keep the map readable; playback and the profile still show them.
+    if (p.nights || minutes >= 15) labelLayer.appendChild(el);
+    return { pos, el, rank: p.nights * 1e6 + minutes };
   });
   const v = new THREE.Vector3();
+  // Most important first (camps, then longest stops); a label that would overlap one already
+  // placed is hidden until zooming in separates them.
+  labels.sort((a, b) => b.rank - a.rank);
   const placeLabels = () => {
     const w = stage.clientWidth;
     const h = stage.clientHeight;
+    const taken: { x0: number; x1: number; y0: number; y1: number }[] = [];
     for (const l of labels) {
       v.copy(l.pos).project(camera);
-      const visible = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
+      const x = ((v.x + 1) / 2) * w;
+      const y = ((1 - v.y) / 2) * h;
+      const lw = l.el.offsetWidth || 120;
+      const lh = l.el.offsetHeight || 22;
+      const box = { x0: x - lw / 2, x1: x + lw / 2, y0: y - lh * 2, y1: y - lh };
+      const visible =
+        v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1 && !taken.some((t) => box.x0 < t.x1 && box.x1 > t.x0 && box.y0 < t.y1 && box.y1 > t.y0);
       l.el.style.display = visible ? '' : 'none';
-      if (visible) l.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -150%)`;
+      if (visible) {
+        taken.push(box);
+        l.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -150%)`;
+      }
     }
   };
 
@@ -325,11 +344,11 @@ async function main() {
   };
   const beginHold = (st: Stop, now: number) => {
     const hours = (Date.parse(st.end) - Date.parse(st.start)) / 3.6e6;
-    const dur = st.nights > 0 ? THREE.MathUtils.clamp(hours * 350, 6000, 16000) : THREE.MathUtils.clamp(hours * 1200, 1500, 3500);
+    const dur = st.nights > 0 ? THREE.MathUtils.clamp(hours * 350, 6000, 16000) : THREE.MathUtils.clamp(hours * 2000, 1200, 3500);
     hold = { st, t0: now, dur };
     document.getElementById('stop-title')!.textContent = fmtStop(st);
     document.getElementById('stop-range')!.textContent = `${fmtClock(Date.parse(st.start))} → ${fmtClock(Date.parse(st.end))}`;
-    skipBtn.hidden = st.nights === 0;
+    skipBtn.hidden = hours < 0.5;
     card.hidden = false;
   };
   skipBtn.addEventListener('click', () => {
@@ -339,7 +358,7 @@ async function main() {
   const startPlay = () => {
     if (progress >= 1) progress = 0;
     const here = distAt(progress);
-    nextStop = stops.findIndex((st) => st.m > here + 1);
+    nextStop = stops.findIndex((st) => (progress === 0 ? st.m >= here : st.m > here + 1));
     if (nextStop < 0) nextStop = stops.length;
     playing = true;
     follow = true;
