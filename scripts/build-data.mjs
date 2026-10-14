@@ -451,6 +451,8 @@ async function main() {
         summary: m.summary || trk.desc || null,
         location: m.location || (await placeName(center.lat, center.lon)),
         link: m.link || null,
+        // Planned routes (drawn in Gaia, not recorded) carry no per-point times.
+        planned: !stats.start,
         date: day,
         endDate: stats.start && stats.elapsed ? localDate(stats.start + stats.elapsed * 1000) : null,
         start: stats.start ? new Date(stats.start).toISOString() : null,

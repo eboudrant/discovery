@@ -28,13 +28,17 @@ function renderInfo(d: TrackData) {
   document.getElementById('title')!.innerHTML = last
     ? `${escapeHtml(words.join(' '))} <em>${escapeHtml(last)}</em>`
     : escapeHtml(d.name);
-  document.getElementById('meta')!.textContent = [fmtDateRange(d.date, d.endDate), d.location].filter(Boolean).join(' · ');
+  document.getElementById('meta')!.textContent = [d.planned ? 'Planned route' : fmtDateRange(d.date, d.endDate), d.location].filter(Boolean).join(' · ');
   document.getElementById('summary')!.textContent = d.summary ?? '';
   const s = d.stats;
   document.getElementById('stats')!.innerHTML = `
     <div><dt>Distance</dt><dd>${fmtMiles(s.distance)}<small>mi</small></dd></div>
     <div><dt>Climbing</dt><dd>${fmtFeet(s.gain)}<small>ft</small></dd></div>
-    <div><dt>${s.moving ? 'Moving' : 'Time'}</dt><dd>${fmtDuration(s.moving ?? s.elapsed)}</dd></div>`;
+    ${
+      d.planned
+        ? `<div><dt>High point</dt><dd>${fmtFeet(s.maxEle)}<small>ft</small></dd></div>`
+        : `<div><dt>${s.moving ? 'Moving' : 'Time'}</dt><dd>${fmtDuration(s.moving ?? s.elapsed)}</dd></div>`
+    }`;
   if (d.link) {
     const a = document.getElementById('gpx-link') as HTMLAnchorElement;
     a.href = d.link;

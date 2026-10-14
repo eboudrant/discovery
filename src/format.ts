@@ -5,6 +5,7 @@ export interface TrackSummary {
   summary: string | null;
   location: string | null;
   link: string | null;
+  planned: boolean;
   date: string | null;
   endDate: string | null;
   start: string | null;

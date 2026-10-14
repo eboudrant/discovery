@@ -59,8 +59,8 @@ for (const file of files) {
       (p) =>
         `<trkpt lat="${p.lat}" lon="${p.lon}">${p.ele != null ? `<ele>${p.ele}</ele>` : ''}${p.time ? `<time>${new Date(p.time).toISOString()}</time>` : ''}</trkpt>`,
     );
-    const day = trk.points[0].time ? localDate(trk.points[0].time) : 'undated';
-    const out = path.join(TRACKS_DIR, `${day}-${slugify(trk.name)}.gpx`);
+    const day = trk.points[0].time ? `${localDate(trk.points[0].time)}-` : '';
+    const out = path.join(TRACKS_DIR, `${day}${slugify(trk.name)}.gpx`);
     await fs.writeFile(
       out,
       `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="us-west-tracks import" xmlns="http://www.topografix.com/GPX/1/1">\n${wpts.join('\n')}\n<trk><name>${esc(trk.name)}</name><trkseg>\n${pts.join('\n')}\n</trkseg></trk>\n</gpx>\n`,
