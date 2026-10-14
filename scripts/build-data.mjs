@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { DOMParser } from '@xmldom/xmldom';
 import { PNG } from 'pngjs';
+import tzlookup from 'tz-lookup';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const TRACKS_DIR = path.join(ROOT, 'tracks');
@@ -85,16 +86,24 @@ export function parseGpx(xml, fallbackName) {
 // GPS units sometimes write sentinel values such as -19999 when they have no fix.
 const validEle = (e) => (Number.isFinite(e) && e > -450 && e < 9000 ? e : null);
 
-const TIME_ZONE = 'America/Los_Angeles';
-export const localDate = (t) => new Date(t).toLocaleDateString('en-CA', { timeZone: TIME_ZONE });
+// Dates, nights and names use the local time where the track was recorded
+// (Arizona stays on standard time; Utah and California follow daylight saving).
+export const zoneAt = (p) => {
+  try {
+    return tzlookup(p.lat, p.lon);
+  } catch {
+    return 'America/Los_Angeles';
+  }
+};
+export const localDate = (t, tz) => new Date(t).toLocaleDateString('en-CA', { timeZone: tz });
 
 // Gaia names recordings "Wednesday Morning Activity" after the day recording started;
 // once a recording is split, rename each piece after its own start time.
-function autoName(name, start) {
+function autoName(name, start, tz) {
   if (!/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) (Morning|Afternoon|Evening|Night) /.test(name) || !start) return name;
   const d = new Date(start);
-  const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: TIME_ZONE });
-  const hour = Number(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: TIME_ZONE }));
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz });
+  const hour = Number(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }));
   const part = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : hour < 21 ? 'Evening' : 'Night';
   return name.replace(/^\w+ \w+/, `${weekday} ${part}`);
 }
@@ -137,7 +146,7 @@ export function splitActivities(trk) {
     const speed = s.distance / Math.max(s.moving || s.elapsed || 1, 1);
     return s.distance > 3000 && speed < 30 / 3.6 && (gain > 100 || speed < 20 / 3.6);
   });
-  return kept.map((points) => ({ ...trk, name: autoName(trk.name, points[0].time), points }));
+  return kept.map((points) => ({ ...trk, name: autoName(trk.name, points[0].time, zoneAt(points[0])), points }));
 }
 
 function computeStats(points) {
@@ -332,6 +341,7 @@ function previewPath(pts) {
  * Places where the recording sat still for a while: lunch stops and camps.
  * A stop is a run of points staying within STOP_RADIUS of where it began for MIN_STOP_SECONDS or more.
  */
+const nightsBetween = (a, b, tz) => Math.round((Date.parse(localDate(b, tz)) - Date.parse(localDate(a, tz))) / 86400000);
 const MIN_STOP_SECONDS = 5 * 60;
 const STOP_RADIUS = 80; // meters
 
@@ -344,29 +354,35 @@ function findStops(points, cum, xy) {
     while (j + 1 < points.length && haversine(points[i], points[j + 1]) < STOP_RADIUS) j++;
     const seconds = (points[j].time - points[i].time) / 1000;
     if (seconds >= MIN_STOP_SECONDS) {
-      const days = (a, b) => Math.round((Date.parse(localDate(b)) - Date.parse(localDate(a))) / 86400000);
       stops.push({
+        i: i,
+        j: j,
         m: Math.round(cum[i]),
         x: Math.round(xy[i][0]),
         y: Math.round(xy[i][1]),
         start: new Date(points[i].time).toISOString(),
         end: new Date(points[j].time).toISOString(),
-        nights: days(points[i].time, points[j].time),
+        nights: nightsBetween(points[i].time, points[j].time, zoneAt(points[i])),
+        timeZone: zoneAt(points[i]),
       });
       i = j + 1;
     } else {
       i++;
     }
   }
-  // A brief GPS jump can split one stop in two; join stops a couple of minutes apart.
-  return stops.reduce((out, st) => {
+  // A brief GPS jump can split one stop in two: join stops a few minutes apart, or with no
+  // recorded movement at all between them (the unit paused overnight and woke a little off).
+  const merged = stops.reduce((out, st) => {
     const prev = out[out.length - 1];
-    if (prev && Date.parse(st.start) - Date.parse(prev.end) < 3 * 60 * 1000 && Math.hypot(st.x - prev.x, st.y - prev.y) < STOP_RADIUS * 2) {
+    const close = prev && Math.hypot(st.x - prev.x, st.y - prev.y) < STOP_RADIUS * 3;
+    if (close && (Date.parse(st.start) - Date.parse(prev.end) < 3 * 60 * 1000 || st.i === prev.j + 1)) {
       prev.end = st.end;
-      prev.nights = Math.round((Date.parse(localDate(Date.parse(prev.end))) - Date.parse(localDate(Date.parse(prev.start)))) / 86400000);
+      prev.j = st.j;
+      prev.nights = nightsBetween(Date.parse(prev.start), Date.parse(prev.end), prev.timeZone);
     } else out.push(st);
     return out;
   }, []);
+  return merged.map(({ i, j, ...st }) => st);
 }
 
 async function loadMeta() {
@@ -389,7 +405,8 @@ async function main() {
     const xml = await fs.readFile(path.join(TRACKS_DIR, file), 'utf8');
     for (const trk of parseGpx(xml, path.basename(file, path.extname(file)))) {
       const stats = computeStats(trk.points);
-      const day = stats.start ? localDate(stats.start) : null;
+      const timeZone = zoneAt(trk.points[0]);
+      const day = stats.start ? localDate(stats.start, timeZone) : null;
       let slug = slugify(trk.name);
       if (used.has(slug) && day) slug = `${slug}-${day}`;
       for (let n = 2; used.has(slug); n++) slug = `${slugify(trk.name)}-${n}`;
@@ -454,7 +471,8 @@ async function main() {
         // Planned routes (drawn in Gaia, not recorded) carry no per-point times.
         planned: !stats.start,
         date: day,
-        endDate: stats.start && stats.elapsed ? localDate(stats.start + stats.elapsed * 1000) : null,
+        endDate: stats.start && stats.elapsed ? localDate(stats.start + stats.elapsed * 1000, zoneAt(trk.points[trk.points.length - 1])) : null,
+        timeZone,
         start: stats.start ? new Date(stats.start).toISOString() : null,
         center,
         stats: {
@@ -487,7 +505,13 @@ async function main() {
         stats.cum,
         trk.points.map((_, i) => [(mx[i] - cx) * k, (my[i] - cy) * k]),
       );
-      await fs.writeFile(path.join(OUT_DIR, `${slug}.json`), JSON.stringify({ ...record, terrain: terrainMeta, waypoints, stops, track: pts }));
+      // Where the local clock changes along the way (crossing from Arizona into Utah, say).
+      const zones = [];
+      for (let i = 0; i < trk.points.length; i += 25) {
+        const tz = zoneAt(trk.points[i]);
+        if (!zones.length || zones[zones.length - 1].tz !== tz) zones.push({ m: Math.round(stats.cum[i]), tz });
+      }
+      await fs.writeFile(path.join(OUT_DIR, `${slug}.json`), JSON.stringify({ ...record, terrain: terrainMeta, waypoints, stops, zones, track: pts }));
       for (const st of stops) console.log(`  stop at ${(st.m / 1609.344).toFixed(1)} mi: ${st.start} → ${st.end} (${st.nights} night(s))`);
       index.push(record);
       console.log(`terrain z${terrain.zoom} ${terrain.nx}×${terrain.ny} from ${terrain.tiles} tiles`);

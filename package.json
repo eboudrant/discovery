@@ -14,7 +14,8 @@
   "dependencies": {
     "@xmldom/xmldom": "^0.9.5",
     "pngjs": "^7.0.0",
-    "three": "^0.170.0"
+    "three": "^0.170.0",
+    "tz-lookup": "^6.1.25"
   },
   "devDependencies": {
     "@types/three": "^0.170.0",

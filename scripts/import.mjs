@@ -7,7 +7,7 @@
 // drives included, as a single track (handy for a multi-day trip).
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { localDate, parseGpx, slugify, splitActivities } from './build-data.mjs';
+import { localDate, parseGpx, slugify, splitActivities, zoneAt } from './build-data.mjs';
 
 const TRACKS_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'tracks');
 const esc = (s) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]);
@@ -59,7 +59,7 @@ for (const file of files) {
       (p) =>
         `<trkpt lat="${p.lat}" lon="${p.lon}">${p.ele != null ? `<ele>${p.ele}</ele>` : ''}${p.time ? `<time>${new Date(p.time).toISOString()}</time>` : ''}</trkpt>`,
     );
-    const day = trk.points[0].time ? `${localDate(trk.points[0].time)}-` : '';
+    const day = trk.points[0].time ? `${localDate(trk.points[0].time, zoneAt(trk.points[0]))}-` : '';
     const out = path.join(TRACKS_DIR, `${day}${slugify(trk.name)}.gpx`);
     await fs.writeFile(
       out,

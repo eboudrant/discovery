@@ -6,6 +6,8 @@ export interface TrackSummary {
   location: string | null;
   link: string | null;
   planned: boolean;
+  /** IANA zone where the track started, e.g. America/Phoenix. */
+  timeZone: string;
   date: string | null;
   endDate: string | null;
   start: string | null;
@@ -29,6 +31,7 @@ export interface Stop {
   start: string;
   end: string;
   nights: number;
+  timeZone: string;
 }
 
 export interface TrackData extends TrackSummary {
@@ -44,6 +47,8 @@ export interface TrackData extends TrackSummary {
   waypoints: { x: number; y: number; name: string; sym: string }[];
   /** Places the recording sat still for 45+ minutes; nights > 0 means camp. */
   stops: Stop[];
+  /** Local time zone from each distance onward. */
+  zones: { m: number; tz: string }[];
   /** [east m, north m, elevation m, cumulative distance m, seconds since start | null] */
   track: [number, number, number, number, number | null][];
 }
@@ -88,17 +93,15 @@ export function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-export const TIME_ZONE = 'America/Los_Angeles';
-
-/** "Fri Oct 9, 10:42 AM" in Pacific time, the clock the photos were taken on. */
-export function fmtClock(ms: number) {
+/** "Fri Oct 9, 10:42 AM" in local time where it happened, the clock the photos were taken on. */
+export function fmtClock(ms: number, timeZone = 'America/Los_Angeles') {
   return new Date(ms).toLocaleString('en-US', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: TIME_ZONE,
+    timeZone,
   });
 }
 

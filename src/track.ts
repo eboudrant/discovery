@@ -271,6 +271,11 @@ async function main() {
   // Elevation profile <-> marker.
   const total = dist[dist.length - 1];
   const readout = document.getElementById('profile-readout')!;
+  const tzAt = (m: number) => {
+    let tz = data.timeZone;
+    for (const z of data.zones ?? []) if (z.m <= m) tz = z.tz;
+    return tz;
+  };
   // Real time along the track (ms since epoch), interpolated by distance.
   const startMs = data.start ? Date.parse(data.start) : null;
   const timed = startMs != null && data.track.every((p) => p[4] != null);
@@ -294,9 +299,9 @@ async function main() {
     const i = Math.min(data.track.length - 1, data.track.findIndex((p) => p[3] >= m));
     const ele = data.track[Math.max(i, 0)][2];
     const parts = [`${miles(m).toFixed(1)} mi`, `${Math.round(feet(ele)).toLocaleString('en-US')} ft`];
-    if (timed) parts.unshift(fmtClock(timeAt(m)));
+    if (timed) parts.unshift(fmtClock(timeAt(m), tzAt(m)));
     const near = stops.find((st) => Math.abs(st.m - m) < total * 0.004);
-    if (near && !playing) parts.splice(0, 1, `${fmtStop(near)}: ${fmtClock(Date.parse(near.start))} → ${fmtClock(Date.parse(near.end))}`);
+    if (near && !playing) parts.splice(0, 1, `${fmtStop(near)}: ${fmtClock(Date.parse(near.start), near.timeZone)} → ${fmtClock(Date.parse(near.end), near.timeZone)}`);
     readout.textContent = parts.join(' · ');
     profile.setCursor(m);
   };
@@ -351,7 +356,7 @@ async function main() {
     const dur = st.nights > 0 ? THREE.MathUtils.clamp(hours * 350, 6000, 16000) : THREE.MathUtils.clamp(hours * 2000, 1200, 3500);
     hold = { st, t0: now, dur };
     document.getElementById('stop-title')!.textContent = fmtStop(st);
-    document.getElementById('stop-range')!.textContent = `${fmtClock(Date.parse(st.start))} → ${fmtClock(Date.parse(st.end))}`;
+    document.getElementById('stop-range')!.textContent = `${fmtClock(Date.parse(st.start), st.timeZone)} → ${fmtClock(Date.parse(st.end), st.timeZone)}`;
     skipBtn.hidden = hours < 0.5;
     card.hidden = false;
   };
@@ -403,10 +408,10 @@ async function main() {
       if (hold) {
         const f = Math.min(1, (now - hold.t0) / hold.dur);
         const clockMs = Date.parse(hold.st.start) + f * (Date.parse(hold.st.end) - Date.parse(hold.st.start));
-        document.getElementById('stop-clock')!.textContent = fmtClock(clockMs);
+        document.getElementById('stop-clock')!.textContent = fmtClock(clockMs, hold.st.timeZone);
         m = hold.st.m;
         showAt(m);
-        readout.textContent = `${fmtClock(clockMs)} · ${miles(m).toFixed(1)} mi`;
+        readout.textContent = `${fmtClock(clockMs, hold.st.timeZone)} · ${miles(m).toFixed(1)} mi`;
         if (f >= 1) endHold();
       } else {
         progress = Math.min(1, progress + dt / duration);
